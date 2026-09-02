@@ -8,6 +8,7 @@ To make it fast, the dataset just returns raw strings and labels, and a custom
 collate function calls the featurizer.
 """
 
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
@@ -301,3 +302,79 @@ def get_dataloader_from_dataframe(config, featurizer, df, is_train=False, shuffl
             collate_fn=collate,
             drop_last=False
         )
+
+
+def create_fp_collate_fn(fp_lookup, descriptor_lookup=None):
+    """Collate function for the PubChemFP flat-vector model. No featurizer/model
+    forward pass needed here — fingerprints are precomputed and looked up by CID."""
+
+    def collate_fn(batch):
+        exc_available = torch.tensor([item["exc_smiles_available"] for item in batch], dtype=torch.float32)
+        labels = torch.tensor([item["label"] for item in batch], dtype=torch.float32)
+
+        api_fp = torch.tensor(
+            np.stack([fp_lookup.get_api(item["api_cid"]) for item in batch]),
+            dtype=torch.float32,
+        )
+        # NOTE: always look up the real excipient fingerprint by CID, exactly
+        # like the existing collate_fn does for exc_desc — the *model*, not
+        # the collate function, is responsible for swapping in the missing-
+        # excipient placeholder based on exc_available. Do not zero this out
+        # here.
+        exc_fp = torch.tensor(
+            np.stack([fp_lookup.get_exc(item["exc_cid"]) for item in batch]),
+            dtype=torch.float32,
+        )
+
+        batch_dict = {
+            "api_fp": api_fp,
+            "exc_fp": exc_fp,
+            "exc_available": exc_available,
+            "labels": labels,
+        }
+
+        if descriptor_lookup is not None:
+            batch_dict["api_desc"] = torch.tensor(
+                [descriptor_lookup.get_api(item["api_cid"]) for item in batch],
+                dtype=torch.float32,
+            )
+            batch_dict["exc_desc"] = torch.tensor(
+                [descriptor_lookup.get_exc(item["exc_cid"]) for item in batch],
+                dtype=torch.float32,
+            )
+
+        return batch_dict
+
+    return collate_fn
+
+
+def get_pubchemfp_dataloaders(config, fp_lookup):
+    """Same structure/semantics as get_dataloaders(), but uses create_fp_collate_fn
+    instead of create_collate_fn (no MolFormerFeaturizer involved)."""
+    train_dataset = CompatibilityDataset(
+        csv_path=config.get_train_csv_path(),
+        is_train=True,
+        modality_dropout_rate=config.modality_dropout_rate,
+        smiles_augment_positive_class=config.smiles_augment_positive_class,
+        smiles_augment_n_variants=config.smiles_augment_n_variants,
+    )
+    val_dataset = CompatibilityDataset(csv_path=config.get_val_csv_path(), is_train=False)
+    test_dataset = CompatibilityDataset(csv_path=config.get_test_csv_path(), is_train=False)
+
+    descriptor_lookup = create_descriptor_lookup(config)
+    collate = create_fp_collate_fn(fp_lookup, descriptor_lookup)
+
+    if config.use_balanced_sampler:
+        train_sampler = create_balanced_sampler(train_dataset)
+        train_loader = DataLoader(train_dataset, batch_size=config.batch_size,
+                                   sampler=train_sampler, collate_fn=collate, drop_last=False)
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=config.batch_size,
+                                   shuffle=True, collate_fn=collate, drop_last=False)
+
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size,
+                             shuffle=False, collate_fn=collate, drop_last=False)
+    test_loader = DataLoader(test_dataset, batch_size=config.batch_size,
+                              shuffle=False, collate_fn=collate, drop_last=False)
+
+    return train_loader, val_loader, test_loader

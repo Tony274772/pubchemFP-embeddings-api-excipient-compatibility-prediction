@@ -76,6 +76,14 @@ class Config:
     threshold_step: float = 0.001
 
     # ------------------------------------------------------------------ #
+    # PubChemFP flat-vector encoder (Option B ablation)
+    # ------------------------------------------------------------------ #
+    pubchem_fp_dim: int = 881
+    fp_proj_hidden_dim: int = 256      # mirrors the hidden size used in _projection() calls elsewhere
+    api_pubchemfp_path: str = "data/api_pubchemfp.csv"
+    excipient_pubchemfp_path: str = "data/excipient_pubchemfp.csv"
+
+    # ------------------------------------------------------------------ #
     # Reproducibility / system
     # ------------------------------------------------------------------ #
     seed: int = 42
