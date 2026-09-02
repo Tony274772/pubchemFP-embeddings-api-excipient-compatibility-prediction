@@ -1,0 +1,25 @@
+{
+  "ratio_requested": 3.0,
+  "n_positive": 344,
+  "n_negative_selected": 1032,
+  "n_negative_available_in_source": 3200,
+  "actual_ratio": 3.0,
+  "grouping_key_used": "butina_cluster",
+  "splits": {
+    "train": {
+      "rows": 851,
+      "pos": 211
+    },
+    "val": {
+      "rows": 265,
+      "pos": 57
+    },
+    "test": {
+      "rows": 260,
+      "pos": 76
+    }
+  },
+  "negative_priority_breakdown": {
+    "both_compounds_seen_in_positives": 115
+  }
+}
